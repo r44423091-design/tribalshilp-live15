@@ -1,24 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
 
-export const GEMINI_MODEL = 'gemini-3.8-flash';
-
-export function getGeminiApiKey() {
-  const rawKey = import.meta.env.VITE_GEMINI_API_KEY || '';
-  const key = rawKey.trim().replace(/^["']|["']$/g, '');
-  if (!key) throw new Error('Gemini is not configured yet. Add VITE_GEMINI_API_KEY to your Vercel Environment Variables, then redeploy.');
-  return key;
-}
-
-export async function askGemini(prompt) {
-  if (!prompt || !prompt.trim()) throw new Error('Please enter a question first.');
-  const apiKey = getGeminiApiKey();
-  const ai = new GoogleGenAI({ apiKey });
-  
-  const response = await ai.models.generateContent({
-    model: GEMINI_MODEL,
-    contents: prompt.trim(),
-  });
-  
   return response.text;
 }
 
@@ -66,4 +46,4 @@ export async function analyzeLeaf({ cropName = 'the crop shown', leafImage, note
 
 export function getLeafAnalysisError(error) {
   return error?.message || 'Leaf scan could not complete. Please check your connection and try a clearer photo.';
-}
+
