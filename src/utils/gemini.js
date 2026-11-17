@@ -1,64 +1,56 @@
-const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+import { GoogleGenAI } from '@google/genai';
+
 export const GEMINI_MODEL = 'gemini-3.8-flash';
 
 export function getGeminiApiKey() {
-  const key = import.meta.env.VITE_GEMINI_API_KEY;
-  if (!key || !key.trim()) throw new Error('Gemini is not configured yet. Add VITE_GEMINI_API_KEY to your .env file, then restart the app.');
-  return key.trim();
+  const rawKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+  const key = rawKey.trim().replace(/^["']|["']$/g, '');
+  if (!key) throw new Error('Gemini is not configured yet. Add VITE_GEMINI_API_KEY to your Vercel Environment Variables, then redeploy.');
+  return key;
 }
 
-async function requestGemini({ prompt, image }) {
+export async function askGemini(prompt) {
+  if (!prompt || !prompt.trim()) throw new Error('Please enter a question first.');
   const apiKey = getGeminiApiKey();
-  const parts = [{ text: prompt }];
-  if (image) {
-    let mimeType = image.type || 'image/jpeg';
-    let data;
-    if (typeof image === 'string') {
-      const match = image.match(/^data:(image\/[\w.+-]+);base64,(.+)$/);
-      if (!match) throw new Error('The leaf image could not be prepared. Please choose another photo.');
-      mimeType = match[1]; data = match[2];
-    } else {
-      if (!image.type?.startsWith('image/')) throw new Error('Please select a valid image file.');
-      data = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result).split(',')[1]);
-        reader.onerror = () => reject(new Error('The image could not be read. Please try another photo.'));
-        reader.readAsDataURL(image);
-      });
-    }
-    parts.push({ inline_data: { mime_type: mimeType, data } });
-  }
-  let response;
-  try {
-    response = await fetch(`${API_BASE}/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0.35, topP: 0.85, maxOutputTokens: 900 } })
-    });
-  } catch {
-    throw new Error('Could not reach Gemini. Check your internet connection and try again.');
-  }
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const message = payload?.error?.message;
-    if (response.status === 401 || response.status === 403) throw new Error('Gemini rejected the API key. Check that VITE_GEMINI_API_KEY is valid and enabled for the Generative Language API.');
-    if (response.status === 404) throw new Error(`Gemini model “${GEMINI_MODEL}” is unavailable for this API key or endpoint. Check the model name in src/utils/gemini.js.`);
-    if (response.status === 429) throw new Error('Gemini is receiving too many requests. Please wait a moment and try again.');
-    throw new Error(message || `Gemini request failed (${response.status}). Please try again.`);
-  }
-  const answer = payload?.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('').trim();
-  if (!answer) throw new Error('Gemini returned no answer. Please try again with a clearer question or photo.');
-  return answer;
-}
-
-export function askGemini(prompt) {
-  if (!prompt || !prompt.trim()) return Promise.reject(new Error('Please enter a question first.'));
-  return requestGemini({ prompt: prompt.trim() });
+  const ai = new GoogleGenAI({ apiKey });
+  
+  const response = await ai.models.generateContent({
+    model: GEMINI_MODEL,
+    contents: prompt.trim(),
+  });
+  
+  return response.text;
 }
 
 export async function analyzeLeaf({ cropName = 'the crop shown', leafImage, notes = '' } = {}) {
   if (!leafImage) throw new Error('Please upload a leaf photo to scan.');
+  const apiKey = getGeminiApiKey();
+  const ai = new GoogleGenAI({ apiKey });
+
+  let imagePart;
+  if (typeof leafImage === 'string') {
+    const match = leafImage.match(/^data:(image\/[\w.+-]+);base64,(.+)$/);
+    if (!match) throw new Error('The leaf image could not be prepared. Please choose another photo.');
+    imagePart = { inlineData: { mimeType: match[1], data: match[2] } };
+  } else {
+    if (!image.type?.startsWith('image/')) throw new Error('Please select a valid image file.');
+    const base64Data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(',')[1]);
+      reader.onerror = () => reject(new Error('The image could not be read. Please try another photo.'));
+      reader.readAsDataURL(leafImage);
+    });
+    imagePart = { inlineData: { mimeType: leafImage.type, data: base64Data } };
+  }
+
   const prompt = `You are a careful agricultural information assistant. Assess only visible symptoms in the attached crop-leaf photo; do not claim certainty and do not invent facts. Crop, if known: ${cropName}. Context: ${notes}. Reply as valid JSON only, in this schema: {"disease":"likely issue or unclear/healthy appearance","confidence":0,"remedy":"practical, low-risk English guidance and when to consult a local agricultural extension worker","odia":"ଓଡ଼ିଆରେ ସହଜ, ସୁରକ୍ଷିତ ପରାମର୍ଶ"}. Confidence must be a number from 0 to 100 and reflect image certainty. If diagnosis is unclear, say so and recommend an expert. Do not prescribe chemical pesticide use.`;
-  const output = await requestGemini({ prompt, image: leafImage });
+
+  const response = await ai.models.generateContent({
+    model: GEMINI_MODEL,
+    contents: [prompt, imagePart],
+  });
+
+  const output = response.text || '';
   const jsonText = output.match(/\{[\s\S]*\}/)?.[0];
   if (!jsonText) throw new Error('Gemini could not provide a structured diagnosis. Try a clearer, well-lit photo.');
   let parsed;
