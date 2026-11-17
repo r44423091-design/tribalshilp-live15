@@ -1,23 +1,4 @@
-
-  return response.text;
-}
-
-export async function analyzeLeaf({ cropName = 'the crop shown', leafImage, notes = '' } = {}) {
-  if (!leafImage) throw new Error('Please upload a leaf photo to scan.');
-  const apiKey = getGeminiApiKey();
-  const ai = new GoogleGenAI({ apiKey });
-
-  let imagePart;
-  if (typeof leafImage === 'string') {
-    const match = leafImage.match(/^data:(image\/[\w.+-]+);base64,(.+)$/);
-    if (!match) throw new Error('The leaf image could not be prepared. Please choose another photo.');
-    imagePart = { inlineData: { mimeType: match[1], data: match[2] } };
-  } else {
-    if (!image.type?.startsWith('image/')) throw new Error('Please select a valid image file.');
-    const base64Data = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result).split(',')[1]);
-      reader.onerror = () => reject(new Error('The image could not be read. Please try another photo.'));
+oto.'));
       reader.readAsDataURL(leafImage);
     });
     imagePart = { inlineData: { mimeType: leafImage.type, data: base64Data } };
